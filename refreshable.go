@@ -72,26 +72,15 @@ func NewRefreshableDB(dsn string, bc BeforeConnect, opts ...Option) (*Refreshabl
 
 // IAM provides IAM-based authentication for AWS RDS.
 // https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.IAMDBAuth.Connecting.Go.html#UsingWithRDS.IAMDBAuth.Connecting.GoV2
-func IAM(cfg aws.Config, dbHost, dbUser, dbName string, dbPort int) BeforeConnect {
-	dbEndpoint := fmt.Sprintf("%s:%d", dbHost, dbPort)
-
+func IAM(cfg aws.Config) BeforeConnect {
 	return func(ctx context.Context, config *pgx.ConnConfig) error {
-		token, err := auth.BuildAuthToken(ctx, dbEndpoint, cfg.Region, dbUser, cfg.Credentials)
+		endpoint := fmt.Sprintf("%s:%d", config.Host, config.Port)
+		token, err := auth.BuildAuthToken(ctx, endpoint, cfg.Region, config.User, cfg.Credentials)
 		if err != nil {
 			return err
 		}
 
-		dsn := fmt.Sprintf(
-			"%s:%s@tcp(%s)/%s?tls=true&allowCleartextPasswords=true",
-			dbUser, token, dbEndpoint, dbName,
-		)
-
-		pgxCfg, err := pgx.ParseConfig(dsn)
-		if err != nil {
-			return err
-		}
-
-		*config = *pgxCfg
+		config.Password = token
 		return nil
 	}
 }
