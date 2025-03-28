@@ -47,10 +47,12 @@ func NewRefreshableDB(dsn string, bc BeforeConnect, opts ...Option) (*Refreshabl
 	}
 
 	stdlibOptions := []stdlib.OptionOpenDB{
-		// Refresh function updates the pgx.ConnConfig before a new connection is established.
+		// Refresh function updates the pgx.ConnConfig before a new connection is
+		// established.
 		stdlib.OptionBeforeConnect(bc),
 
-		// For this test, we set up every connection to be discarded after a single use.
+		// For this test, we set up every connection to be discarded after a single
+		// use. You would not want to do this in real life.
 		stdlib.OptionResetSession(func(ctx context.Context, c *pgx.Conn) error {
 			return driver.ErrBadConn
 		}),
