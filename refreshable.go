@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/rds/auth"
@@ -70,17 +72,64 @@ func NewRefreshableDB(dsn string, bc BeforeConnect, opts ...Option) (*Refreshabl
 	return &RefreshableDB{gormDB}, nil
 }
 
-// IAM provides IAM-based authentication for AWS RDS.
+type IAM struct {
+	once       *sync.Once
+	err        error
+	window     time.Duration
+	lifetime   time.Duration
+	expiration time.Time
+	token      string
+}
+
+func NewIAM() *IAM {
+	return &IAM{
+		window:   2 * time.Minute,
+		lifetime: 15 * time.Minute,
+		once:     &sync.Once{},
+	}
+}
+
+func (i *IAM) Expired() bool {
+	return time.Now().Add(-i.window).After(i.expiration)
+}
+
+// Refresh provides IAM-based authentication for AWS RDS.
 // https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.IAMDBAuth.Connecting.Go.html#UsingWithRDS.IAMDBAuth.Connecting.GoV2
-func IAM(cfg aws.Config) BeforeConnect {
+func (i *IAM) Refresh(cfg aws.Config) BeforeConnect {
 	return func(ctx context.Context, config *pgx.ConnConfig) error {
-		endpoint := fmt.Sprintf("%s:%d", config.Host, config.Port)
-		token, err := auth.BuildAuthToken(ctx, endpoint, cfg.Region, config.User, cfg.Credentials)
-		if err != nil {
-			return err
+		// AWS's recommendation is to reuse the token until it expires. This limits
+		// connection throttling.
+		if i.Expired() {
+			// Every connection attempt will block here, only one will make the call
+			// to BuildAuthToken.
+			i.once.Do(func() {
+				var err error
+				var token string
+
+				// Replace i.once so that the next time a connection is attempted and
+				// the token is expired, it will attempt to refresh.
+				defer func() {
+					i.err = err
+					i.once = &sync.Once{}
+				}()
+
+				endpoint := fmt.Sprintf("%s:%d", config.Host, config.Port)
+				token, err = auth.BuildAuthToken(ctx, endpoint, cfg.Region, config.User, cfg.Credentials)
+				if err != nil {
+					return
+				}
+
+				i.token = token
+				i.expiration = time.Now().Add(i.lifetime)
+			})
+
+			// After the token has been refreshed, if there was an error, return it.
+			if i.err != nil {
+				return i.err
+			}
 		}
 
-		config.Password = token
+		config.Password = i.token
 		return nil
 	}
 }
