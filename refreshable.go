@@ -89,17 +89,17 @@ func NewIAM() *IAM {
 	}
 }
 
-func (i *IAM) Expired() bool {
+func (i *IAM) NeedsRefresh() bool {
 	return time.Now().Add(-i.window).After(i.expiration)
 }
 
-// Refresh provides IAM-based authentication for AWS RDS.
+// GetCredentials provides IAM-based authentication for AWS RDS.
 // https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.IAMDBAuth.Connecting.Go.html#UsingWithRDS.IAMDBAuth.Connecting.GoV2
-func (i *IAM) Refresh(cfg aws.Config) BeforeConnect {
+func (i *IAM) GetPassword(cfg aws.Config) BeforeConnect {
 	return func(ctx context.Context, config *pgx.ConnConfig) error {
 		// AWS's recommendation is to reuse the token until it expires. This limits
 		// connection throttling.
-		if i.Expired() {
+		if i.NeedsRefresh() {
 			// Every connection attempt will block here, only one will make the call
 			// to BuildAuthToken.
 			i.once.Do(func() {
