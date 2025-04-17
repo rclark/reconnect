@@ -92,7 +92,7 @@ func NewIAM() *IAM {
 }
 
 func (i *IAM) NeedsRefresh() bool {
-	return time.Now().Add(-i.window).After(i.expiration)
+	return time.Now().Add(i.window).After(i.expiration)
 }
 
 // GetCredentials provides IAM-based authentication for AWS RDS.
