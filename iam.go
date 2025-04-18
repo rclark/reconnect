@@ -45,7 +45,7 @@ func NewIAM() *IAM {
 }
 
 func (i *IAM) NeedsRefresh() bool {
-	return time.Now().Add(-i.window).After(i.expiration)
+	return time.Now().Add(i.window).After(i.expiration)
 }
 
 func (i *IAM) span(ctx context.Context, name string) (context.Context, func()) {
